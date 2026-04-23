@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(*)",
+      "WebSearch",
+      "WebFetch(domain:mmoshope.com)",
+      "WebFetch(domain:developers.klaviyo.com)"
+    ]
+  }
+}

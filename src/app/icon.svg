@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <rect width="32" height="32" rx="7" fill="#0F172A"/>
+
+  <!-- Blue P: vertical stem + loop, with double-leg bottom -->
+  <g fill="none" stroke="#00BFFF" stroke-linecap="round" stroke-linejoin="round" stroke-width="3.2">
+    <!-- left stem -->
+    <path d="M10 6 L10 22"/>
+    <!-- top loop -->
+    <path d="M10 6 L19 6 Q23 6 23 10.5 Q23 15 19 15 L10 15"/>
+    <!-- double-leg bottom -->
+    <path d="M8 22 L8 27"/>
+    <path d="M12 22 L12 27"/>
+  </g>
+
+  <!-- Red heartbeat/EKG line crossing through -->
+  <path
+    d="M3 19 L10 19 L12 14 L15 24 L18.5 9 L22 19 L29 19"
+    fill="none"
+    stroke="#EF4444"
+    stroke-width="2"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>
