@@ -1,25 +1,29 @@
 import { Pool, PoolClient } from 'pg'
 
-if (!process.env.DATABASE_URL) {
-  throw new Error('DATABASE_URL environment variable is not set')
+let _pool: Pool | null = null
+
+function getPool(): Pool {
+  if (_pool) return _pool
+  if (!process.env.DATABASE_URL) {
+    throw new Error('DATABASE_URL environment variable is not set')
+  }
+  _pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    max: 10,
+    idleTimeoutMillis: 30_000,
+    connectionTimeoutMillis: 2_000,
+  })
+  _pool.on('error', (err) => {
+    console.error('Unexpected Postgres pool error:', err)
+  })
+  return _pool
 }
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  max: 10,
-  idleTimeoutMillis: 30_000,
-  connectionTimeoutMillis: 2_000,
-})
-
-pool.on('error', (err) => {
-  console.error('Unexpected Postgres pool error:', err)
-})
 
 export async function query<T = Record<string, unknown>>(
   text: string,
   params?: unknown[]
 ): Promise<T[]> {
-  const result = await pool.query(text, params)
+  const result = await getPool().query(text, params)
   return result.rows as T[]
 }
 
@@ -34,7 +38,7 @@ export async function queryOne<T = Record<string, unknown>>(
 export async function withTransaction<T>(
   fn: (client: PoolClient) => Promise<T>
 ): Promise<T> {
-  const client = await pool.connect()
+  const client = await getPool().connect()
   try {
     await client.query('BEGIN')
     const result = await fn(client)
@@ -48,4 +52,4 @@ export async function withTransaction<T>(
   }
 }
 
-export default pool
+export default getPool
