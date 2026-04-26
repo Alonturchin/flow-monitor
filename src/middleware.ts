@@ -5,6 +5,6 @@ export default withAuth({
 })
 
 export const config = {
-  // Protect everything except: auth API, Next.js internals, static assets, login page
-  matcher: ['/((?!api/auth|_next/static|_next/image|favicon.ico|login).*)'],
+  // Protect everything except: auth API, public invite API/page, Next.js internals, static assets, login
+  matcher: ['/((?!api/auth|api/invites|_next/static|_next/image|favicon.ico|login|invite).*)'],
 }
