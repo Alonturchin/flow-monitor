@@ -306,12 +306,88 @@ export default function FlowDetailModal({ flowId, onClose, onAlertActioned }: Pr
 
   async function handleAddTask(alertId: number) {
     if (!flow) return
+    const alert = alerts.find((a) => a.id === alertId)
+    if (!alert) return
+
     setTaskStatus(prev => ({ ...prev, [alertId]: 'creating' }))
     try {
+      // Compute the exact date range for this alert's week (Sun–Sat)
+      const weekStart = alert.week_start
+      let dateRangeText = ''
+      if (weekStart) {
+        const start = new Date(weekStart + 'T00:00:00')
+        const end = new Date(start)
+        end.setDate(end.getDate() + 6)
+        const opts: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric', year: 'numeric' }
+        dateRangeText = `${start.toLocaleDateString('en-US', opts)} – ${end.toLocaleDateString('en-US', opts)}`
+      }
+
+      // Full email name (not truncated) + Klaviyo link
+      const fullEmailName = alert.message_name
+        ?? (alert.message_id ? msgNames[alert.message_id] : null)
+        ?? (alert.message_id ? messages.find(m => m.message_id === alert.message_id)?.message_name : null)
+        ?? null
+
+      const flowLink = `https://www.klaviyo.com/flow/${flow.flow_id}/edit`
+      const emailLink = alert.message_id
+        ? `https://www.klaviyo.com/flow/message/${alert.message_id}/reports/overview`
+        : null
+
+      const metricLabel = METRIC_LABELS[alert.metric] ?? alert.metric
+      const isDropMetric = alert.metric.endsWith('_drop')
+      const valueText = isDropMetric
+        ? `${(alert.value * 100).toFixed(1)}% drop`
+        : `${(alert.value * 100).toFixed(2)}%`
+      const thresholdText = isDropMetric
+        ? `${(alert.threshold * 100).toFixed(0)}%+ drop`
+        : `${(alert.threshold * 100).toFixed(2)}%`
+
+      const { messageDetail, suggestion } = (() => {
+        const text = alert.ai_suggestion ?? ''
+        const aiIdx = text.indexOf('AI suggestion:')
+        if (aiIdx === -1) return { messageDetail: text.trim() || null, suggestion: null }
+        return {
+          messageDetail: text.slice(0, aiIdx).trim() || null,
+          suggestion: text.slice(aiIdx + 'AI suggestion:'.length).trim() || null,
+        }
+      })()
+
+      // Rich task name — up to ~100 chars of flow + email + metric
+      const taskName = emailLink && fullEmailName
+        ? `[${alert.severity.toUpperCase()}] ${flow.name} › ${fullEmailName} — ${metricLabel}: ${valueText}`
+        : `[${alert.severity.toUpperCase()}] ${flow.name} — ${metricLabel}: ${valueText}`
+
+      // Task description (goes in Monday as an update / comment — supports URLs)
+      const lines = [
+        `FLOW: ${flow.name}`,
+        `  → ${flowLink}`,
+        '',
+        fullEmailName ? `EMAIL: ${fullEmailName}` : `SCOPE: Entire flow`,
+        emailLink ? `  → ${emailLink}` : null,
+        '',
+        `METRIC: ${metricLabel}`,
+        `CURRENT VALUE: ${valueText}`,
+        `THRESHOLD: ${thresholdText}`,
+        `SEVERITY: ${alert.severity}`,
+        dateRangeText ? `DATA WEEK: ${dateRangeText}` : null,
+        '',
+        messageDetail ? `DETAILS:` : null,
+        messageDetail || null,
+        suggestion ? '' : null,
+        suggestion ? `AI SUGGESTION:` : null,
+        suggestion || null,
+      ].filter(Boolean).join('\n')
+
       const res = await fetch('/api/monday/task', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ flow_id: flow.flow_id, alert_id: alertId }),
+        body: JSON.stringify({
+          flow_id: flow.flow_id,
+          alert_id: alertId,
+          task_type: 'alert',
+          name: taskName,
+          description: lines,
+        }),
       })
       const data = await res.json()
       setTaskStatus(prev => ({ ...prev, [alertId]: res.ok && data.ok ? 'done' : 'error' }))

@@ -55,9 +55,9 @@ async function klaviyoPost<T>(path: string, body: unknown, attempt = 0): Promise
 
 // ─── Raw Klaviyo types ────────────────────────────────────────────────────────
 
-interface KlaviyoPage<T> {
+interface KlaviyoPage<T, I = unknown> {
   data: T[]
-  included?: unknown[]
+  included?: I[]
   links: { next?: string | null }
 }
 
@@ -117,7 +117,8 @@ export async function listFlows(): Promise<NormalizedFlow[]> {
     `/flows?fields[flow]=name,status,trigger_type,created,updated,archived&include=tags&fields[tag]=name&page[size]=50`
 
   while (url) {
-    const page = await klaviyoGet<KlaviyoPage<KlaviyoFlowData> & { included?: KlaviyoTagData[] }>(url)
+    const page: KlaviyoPage<KlaviyoFlowData, KlaviyoTagData> =
+      await klaviyoGet<KlaviyoPage<KlaviyoFlowData, KlaviyoTagData>>(url)
 
     const tagMap = new Map<string, string>()
     for (const inc of page.included ?? []) {
@@ -171,7 +172,8 @@ export async function listFlowMessages(flowId: string): Promise<FlowMessageInfo[
   const emailActionIds: string[] = []
 
   while (url) {
-    const page = await klaviyoGet<KlaviyoPage<KlaviyoFlowActionData>>(url)
+    const page: KlaviyoPage<KlaviyoFlowActionData> =
+      await klaviyoGet<KlaviyoPage<KlaviyoFlowActionData>>(url)
 
     for (const action of page.data) {
       if (action.attributes.action_type === 'SEND_EMAIL' || action.attributes.action_type === 'EMAIL') {
@@ -230,7 +232,8 @@ export async function getConversionMetricId(): Promise<string | null> {
   let url: string | null = `/metrics?fields[metric]=name`
 
   while (url) {
-    const page = await klaviyoGet<KlaviyoPage<KlaviyoMetricData>>(url)
+    const page: KlaviyoPage<KlaviyoMetricData> =
+      await klaviyoGet<KlaviyoPage<KlaviyoMetricData>>(url)
 
     for (const metric of page.data) {
       if (REVENUE_METRIC_CANDIDATES.includes(metric.attributes.name)) {

@@ -122,7 +122,7 @@ export async function GET(req: Request) {
 
     const alerts: ComputedAlert[] = []
 
-    function pushDrop(args: {
+    const pushDrop = (args: {
       scope: 'flow' | 'message'
       message_id: string | null
       message_name: string | null
@@ -131,7 +131,7 @@ export async function GET(req: Request) {
       prevVal: number
       curRecip: number
       prevRecip: number
-    }) {
+    }) => {
       const { scope, message_id, message_name, metric, curVal, prevVal, curRecip, prevRecip } = args
 
       // Common recipient gate

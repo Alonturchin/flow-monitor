@@ -14,6 +14,8 @@ services:
       - KLAVIYO_API_KEY=${KLAVIYO_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - MONDAY_API_KEY=${MONDAY_API_KEY}
+      - AUTH_EMAIL=${AUTH_EMAIL}
+      - AUTH_PASSWORD=${AUTH_PASSWORD}
     depends_on:
       db:
         condition: service_healthy
@@ -35,18 +37,23 @@ services:
       retries: 5
     restart: unless-stopped
 
-  nginx:
-    image: nginx:alpine
+  caddy:
+    image: caddy:2-alpine
     ports:
       - '80:80'
       - '443:443'
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
-      - /etc/letsencrypt:/etc/letsencrypt:ro
-      - /var/www/certbot:/var/www/certbot:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      - DOMAIN=${DOMAIN}
+      - ACME_EMAIL=${ACME_EMAIL}
     depends_on:
       - app
     restart: unless-stopped
 
 volumes:
   postgres_prod_data:
+  caddy_data:
+  caddy_config:
