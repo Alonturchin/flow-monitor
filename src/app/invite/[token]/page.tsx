@@ -12,6 +12,7 @@ export default function InvitePage({ params }: Props) {
   const [role, setRole]         = useState<'admin' | 'user'>('user')
   const [pw, setPw]             = useState('')
   const [pwConfirm, setPwConfirm] = useState('')
+  const [showPw, setShowPw]     = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError]       = useState('')
   const [done, setDone]         = useState(false)
@@ -108,9 +109,18 @@ export default function InvitePage({ params }: Props) {
               />
             </div>
             <div>
-              <label className="text-xs text-gray-500 block mb-1">Password (min 8 chars)</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs text-gray-500">Password (min 8 chars)</label>
+                <button
+                  type="button"
+                  onClick={() => setShowPw(s => !s)}
+                  className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                >
+                  {showPw ? 'Hide' : 'Show'}
+                </button>
+              </div>
               <input
-                type="password"
+                type={showPw ? 'text' : 'password'}
                 value={pw}
                 onChange={(e) => setPw(e.target.value)}
                 required
@@ -122,7 +132,7 @@ export default function InvitePage({ params }: Props) {
             <div>
               <label className="text-xs text-gray-500 block mb-1">Confirm password</label>
               <input
-                type="password"
+                type={showPw ? 'text' : 'password'}
                 value={pwConfirm}
                 onChange={(e) => setPwConfirm(e.target.value)}
                 required

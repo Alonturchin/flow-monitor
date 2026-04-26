@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
-import { query, queryOne } from '@/lib/db'
+import { query } from '@/lib/db'
 import { randomBytes } from 'crypto'
 
 async function requireAdmin() {
@@ -53,11 +53,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'email required' }, { status: 400 })
     }
 
-    const existingUser = await queryOne(`SELECT id FROM users WHERE email = $1`, [email])
-    if (existingUser) {
-      return NextResponse.json({ error: 'A user with this email already exists' }, { status: 409 })
-    }
-
+    // If a user already exists, the invite acts as a password reset link.
+    // Role from the body is ignored in that case (handled in the accept route).
     const token = randomBytes(32).toString('hex')
     const createdBy = auth.session?.user?.email ?? 'admin'
 

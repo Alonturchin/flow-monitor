@@ -44,6 +44,7 @@ export default function AdminPage() {
 
   const [changingPw, setChangingPw] = useState<string | null>(null)
   const [pwValue, setPwValue]       = useState('')
+  const [resetLink, setResetLink]   = useState<{ email: string; url: string } | null>(null)
 
   async function load() {
     setLoading(true)
@@ -171,6 +172,26 @@ export default function AdminPage() {
     }
   }
 
+  async function handleSendResetLink(u: User) {
+    setError('')
+    try {
+      const res = await fetch('/api/admin/invites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: u.email, role: u.role }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setError(data.error ?? 'Failed to create reset link')
+      } else {
+        setResetLink({ email: u.email, url: inviteUrl(data.token) })
+        await load()
+      }
+    } catch (err) {
+      setError(String(err))
+    }
+  }
+
   async function handlePasswordChange(u: User) {
     if (!pwValue || pwValue.length < 8) {
       setError('Password must be at least 8 characters')
@@ -246,6 +267,36 @@ export default function AdminPage() {
         {error && (
           <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-3 py-2">
             {error}
+          </div>
+        )}
+
+        {resetLink && (
+          <div className="bg-green-50 border border-green-200 rounded-xl p-4 space-y-2">
+            <p className="text-sm font-medium text-green-800">
+              Reset link for <span className="font-mono">{resetLink.email}</span> — share via Slack/email:
+            </p>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={resetLink.url}
+                readOnly
+                onFocus={(e) => e.currentTarget.select()}
+                className="flex-1 text-sm border border-gray-200 bg-white rounded-md px-3 py-2 font-mono"
+              />
+              <button
+                onClick={() => handleCopy(resetLink.url)}
+                className="text-sm px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md"
+              >
+                Copy
+              </button>
+              <button
+                onClick={() => setResetLink(null)}
+                className="text-sm px-3 py-2 bg-white border border-gray-200 hover:bg-gray-50 text-gray-700 rounded-md"
+              >
+                Close
+              </button>
+            </div>
+            <p className="text-xs text-gray-500">{copyMsg || 'Single-use, expires in 7 days.'}</p>
           </div>
         )}
 
@@ -468,10 +519,17 @@ export default function AdminPage() {
                     {changingPw !== u.id && (
                       <div className="flex items-center gap-1.5 shrink-0">
                         <button
+                          onClick={() => handleSendResetLink(u)}
+                          className="text-xs px-2 py-1 bg-white border border-gray-200 hover:bg-gray-50 text-gray-600 rounded-md"
+                          title="Generate a one-time link the user opens to set a new password"
+                        >
+                          Send reset link
+                        </button>
+                        <button
                           onClick={() => { setChangingPw(u.id); setPwValue(''); setError('') }}
                           className="text-xs px-2 py-1 bg-white border border-gray-200 hover:bg-gray-50 text-gray-600 rounded-md"
                         >
-                          Reset pw
+                          Set pw
                         </button>
                         {!isMe && (
                           <>

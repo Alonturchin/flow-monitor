@@ -40,15 +40,20 @@ export async function POST(req: Request, { params }: Params) {
         `SELECT id FROM users WHERE email = $1`,
         [invite.email]
       )
-      if (existing.rows[0]) {
-        return { status: 409 as const, error: 'A user with this email already exists' }
-      }
 
-      await client.query(
-        `INSERT INTO users (email, password_hash, role, created_by)
-         VALUES ($1, $2, $3, $4)`,
-        [invite.email, hashPassword(password), invite.role, 'invite']
-      )
+      if (existing.rows[0]) {
+        // Password reset path: user already exists, update their hash.
+        await client.query(
+          `UPDATE users SET password_hash = $1 WHERE email = $2`,
+          [hashPassword(password), invite.email]
+        )
+      } else {
+        await client.query(
+          `INSERT INTO users (email, password_hash, role, created_by)
+           VALUES ($1, $2, $3, $4)`,
+          [invite.email, hashPassword(password), invite.role, 'invite']
+        )
+      }
       await client.query(
         `UPDATE user_invites SET used_at = now() WHERE token = $1`,
         [params.token]
