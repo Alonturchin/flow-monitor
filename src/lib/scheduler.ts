@@ -6,38 +6,72 @@ const TASK_NAME = 'weekly-klaviyo-pull'
 const CRON_EXPR = '0 6 * * 0' // 06:00 on day 0 (Sunday)
 const TIMEZONE  = 'Asia/Jerusalem'
 
-let isRunning = false
+// Next bundles instrumentation.ts and route handlers separately, so each
+// gets its own copy of this module AND its own copy of node-cron. To expose
+// scheduler state across bundles, store it on globalThis (shared per
+// Node process).
+interface SchedulerState {
+  started: boolean
+  startedAt: number          // ms epoch
+  isRunning: boolean
+  lastRunAt: number | null   // ms epoch
+  lastRunOk: boolean | null
+  lastRunError: string | null
+}
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __flowMonitorScheduler: SchedulerState | undefined
+}
+
+function state(): SchedulerState {
+  if (!globalThis.__flowMonitorScheduler) {
+    globalThis.__flowMonitorScheduler = {
+      started: false,
+      startedAt: 0,
+      isRunning: false,
+      lastRunAt: null,
+      lastRunOk: null,
+      lastRunError: null,
+    }
+  }
+  return globalThis.__flowMonitorScheduler
+}
 
 export async function runDataPull(): Promise<void> {
-  if (isRunning) {
+  const s = state()
+  if (s.isRunning) {
     console.log('[scheduler] Pull already in progress, skipping.')
     return
   }
-  isRunning = true
+  s.isRunning = true
   console.log('[scheduler] Starting Klaviyo data pull…')
   try {
     const { runWeeklySync } = await import('@/lib/data-sync')
     const result = await runWeeklySync()
     console.log('[scheduler] Pull complete.', result)
+    s.lastRunAt = Date.now()
+    s.lastRunOk = true
+    s.lastRunError = null
   } catch (err) {
     console.error('[scheduler] Pull failed:', err)
+    s.lastRunAt = Date.now()
+    s.lastRunOk = false
+    s.lastRunError = String(err)
   } finally {
-    isRunning = false
+    s.isRunning = false
   }
 }
 
 /**
  * Schedule: Every Sunday at 06:00 Asia/Jerusalem.
  * node-cron handles DST automatically via the timezone option.
- *
- * Status is read back via cron.getTasks() so it works correctly even when
- * Next bundles instrumentation.ts and the route handler into separate
- * module instances (the underlying node-cron module is a singleton).
  */
 export function startScheduler(): void {
-  const existing = cron.getTasks().get(TASK_NAME)
-  if (existing) {
-    existing.stop()
+  const s = state()
+  if (s.started) {
+    console.log('[scheduler] Already started — skipping re-registration.')
+    return
   }
 
   cron.schedule(
@@ -52,13 +86,14 @@ export function startScheduler(): void {
     }
   )
 
+  s.started = true
+  s.startedAt = Date.now()
   console.log('[scheduler] Weekly scheduler started: Sunday 06:00 Asia/Jerusalem')
 }
 
 /** Compute the next Sunday at 06:00 Asia/Jerusalem, returned as a UTC ISO string. */
 function nextRunISO(): string {
   const now = new Date()
-  // Format current time as if in IL — using sv-SE locale which is YYYY-MM-DD HH:mm:ss
   const ilParts = new Intl.DateTimeFormat('sv-SE', {
     timeZone: TIMEZONE,
     year: 'numeric', month: '2-digit', day: '2-digit',
@@ -73,11 +108,9 @@ function nextRunISO(): string {
   const d = Number(part('day'))
   const h = Number(part('hour'))
   const mi = Number(part('minute'))
-  const weekdayShort = part('weekday') // e.g. 'Mon'
   const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
-  const ilDayOfWeek = dayMap[weekdayShort] ?? 0
+  const ilDayOfWeek = dayMap[part('weekday')] ?? 0
 
-  // Days until next Sunday 06:00 IL
   let days: number
   if (ilDayOfWeek === 0 && (h < 6 || (h === 6 && mi === 0))) {
     days = 0
@@ -86,16 +119,11 @@ function nextRunISO(): string {
     if (days === 0) days = 7
   }
 
-  // Build target IL wall time, then convert to UTC by computing the IL offset for that moment.
-  // Strategy: build a UTC date with the IL wall-clock numbers, then subtract IL offset.
   const targetIlWall = new Date(Date.UTC(y, mo - 1, d + days, 6, 0, 0))
-  // Compute IL offset for that target by looking at how IL formats it.
   const offsetMin = ilOffsetMinutes(targetIlWall)
-  const targetUTC = new Date(targetIlWall.getTime() - offsetMin * 60_000)
-  return targetUTC.toISOString()
+  return new Date(targetIlWall.getTime() - offsetMin * 60_000).toISOString()
 }
 
-/** Offset of Asia/Jerusalem from UTC, in minutes, at the given instant. */
 function ilOffsetMinutes(at: Date): number {
   const fmt = new Intl.DateTimeFormat('en-US', {
     timeZone: TIMEZONE,
@@ -112,15 +140,17 @@ function ilOffsetMinutes(at: Date): number {
 }
 
 export function getSchedulerStatus() {
-  const tasks = cron.getTasks()
-  const ourTask = tasks.get(TASK_NAME)
+  const s = state()
   return {
-    active: !!ourTask,
-    isRunning,
+    active: s.started,
+    isRunning: s.isRunning,
     cron: CRON_EXPR,
     timezone: TIMEZONE,
     description: 'Every Sunday at 06:00 Israel time',
+    startedAt: s.startedAt ? new Date(s.startedAt).toISOString() : null,
+    lastRunAt: s.lastRunAt ? new Date(s.lastRunAt).toISOString() : null,
+    lastRunOk: s.lastRunOk,
+    lastRunError: s.lastRunError,
     nextRunUTC: nextRunISO(),
-    totalRegisteredTasks: tasks.size,
   }
 }
