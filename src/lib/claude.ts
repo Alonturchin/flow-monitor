@@ -11,11 +11,34 @@ const ANALYSIS_MODEL = 'claude-sonnet-4-6'
 const LIGHT_MODEL    = 'claude-haiku-4-5-20251001'
 
 // Web search tool — Anthropic executes it server-side, no loop needed.
+// max_uses kept at 1 to keep input tokens predictable (each search result
+// can add a few thousand tokens to the request context).
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const WEB_SEARCH_TOOL: any = {
   type: 'web_search_20250305',
   name: 'web_search',
-  max_uses: 3,
+  max_uses: 1,
+}
+
+/** Retry wrapper for transient 429 rate-limit hits. */
+async function withRateLimitRetry<T>(fn: () => Promise<T>, attempts = 3): Promise<T> {
+  let lastErr: unknown
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn()
+    } catch (err) {
+      lastErr = err
+      const e = err as { status?: number; headers?: Record<string, string> }
+      if (e?.status !== 429 || i === attempts - 1) throw err
+      // Honor server-sent retry-after when present, else exponential backoff.
+      const retryAfterSec = Number(e.headers?.['retry-after'])
+      const waitMs = Number.isFinite(retryAfterSec) && retryAfterSec > 0
+        ? retryAfterSec * 1000
+        : Math.min(1000 * Math.pow(2, i), 30_000)
+      await new Promise((r) => setTimeout(r, waitMs))
+    }
+  }
+  throw lastErr
 }
 
 let _client: Anthropic | null = null
@@ -156,7 +179,7 @@ Current week stats:
 - Spam rate: ${fmtPct(stats.spam_complaint_rate)}
 - Revenue: ${stats.revenue != null ? `$${Number(stats.revenue).toLocaleString()}` : 'n/a'}
 
-Historical trend (oldest → newest, up to 12 prior weeks):
+Historical trend (oldest → newest, up to 6 prior weeks):
 ${trendLines}
 
 Use the historical data to identify patterns:
@@ -183,12 +206,14 @@ You have access to web search. Use it (up to 3 searches) to find:
 
 Cite the source URL briefly when you use a web-sourced insight.`
 
-  const msg = await getClient().messages.create({
-    model: ANALYSIS_MODEL,
-    max_tokens: 1000,
-    tools: [WEB_SEARCH_TOOL],
-    messages: [{ role: 'user', content: prompt }],
-  })
+  const msg = await withRateLimitRetry(() =>
+    getClient().messages.create({
+      model: ANALYSIS_MODEL,
+      max_tokens: 1000,
+      tools: [WEB_SEARCH_TOOL],
+      messages: [{ role: 'user', content: prompt }],
+    })
+  )
   return collectText(msg.content)
 }
 
@@ -204,13 +229,15 @@ export async function chatAboutAlert(
 
 You have access to web search. Use it when the user asks about benchmarks, best practices, industry standards, or when citing an outside source would make your answer more authoritative. Cite URLs briefly.`
 
-  const msg = await getClient().messages.create({
-    model: ANALYSIS_MODEL,
-    max_tokens: 1200,
-    tools: [WEB_SEARCH_TOOL],
-    system: systemContext,
-    messages: history.map((m) => ({ role: m.role, content: m.content })),
-  })
+  const msg = await withRateLimitRetry(() =>
+    getClient().messages.create({
+      model: ANALYSIS_MODEL,
+      max_tokens: 1200,
+      tools: [WEB_SEARCH_TOOL],
+      system: systemContext,
+      messages: history.map((m) => ({ role: m.role, content: m.content })),
+    })
+  )
   return collectText(msg.content)
 }
 
@@ -301,12 +328,14 @@ Provide 2–3 tests. Each should:
 
 You may use web search (up to 3 searches) to ground your suggestions in recent best practices or industry examples.`
 
-  const msg = await getClient().messages.create({
-    model: ANALYSIS_MODEL,
-    max_tokens: 1800,
-    tools: [WEB_SEARCH_TOOL],
-    messages: [{ role: 'user', content: context + instruction }],
-  })
+  const msg = await withRateLimitRetry(() =>
+    getClient().messages.create({
+      model: ANALYSIS_MODEL,
+      max_tokens: 1800,
+      tools: [WEB_SEARCH_TOOL],
+      messages: [{ role: 'user', content: context + instruction }],
+    })
+  )
 
   const text = collectText(msg.content)
   if (!text) return []
@@ -332,13 +361,15 @@ export async function chatAboutTests(
 You are advising on A/B tests for this email. Be specific, cite actual numbers when possible, and suggest practical, testable changes.
 
 You have access to web search. Use it when the user asks about benchmarks, proven test patterns, or industry standards. Cite URLs briefly.`
-  const msg = await getClient().messages.create({
-    model: ANALYSIS_MODEL,
-    max_tokens: 1200,
-    tools: [WEB_SEARCH_TOOL],
-    system: systemContext,
-    messages: history.map((m) => ({ role: m.role, content: m.content })),
-  })
+  const msg = await withRateLimitRetry(() =>
+    getClient().messages.create({
+      model: ANALYSIS_MODEL,
+      max_tokens: 1200,
+      tools: [WEB_SEARCH_TOOL],
+      system: systemContext,
+      messages: history.map((m) => ({ role: m.role, content: m.content })),
+    })
+  )
   return collectText(msg.content)
 }
 

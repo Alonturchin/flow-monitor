@@ -36,14 +36,23 @@ export async function POST(req: Request) {
       threshold: number
       severity: string
       week_start: string | null
+      ai_suggestion: string | null
     }>(`
-      SELECT id, flow_id, message_id, metric, value::float, threshold::float, severity, week_start::text
+      SELECT id, flow_id, message_id, metric, value::float, threshold::float, severity,
+             week_start::text, ai_suggestion
       FROM alerts
       WHERE id = $1
     `, [alert_id])
 
     if (!alert) {
       return NextResponse.json({ error: 'Alert not found' }, { status: 404 })
+    }
+
+    // Initial-analysis path: if we already have a stored suggestion, return it
+    // instead of re-spending tokens. Chat continuations always hit the API.
+    const isInitialLoad = !history || history.length === 0
+    if (isInitialLoad && alert.ai_suggestion) {
+      return NextResponse.json({ reply: alert.ai_suggestion, cached: true })
     }
 
     const flow = await queryOne<Flow>(`
@@ -90,7 +99,7 @@ export async function POST(req: Request) {
             FROM message_snapshots
             WHERE message_id = $1 AND ($2::date IS NULL OR week_start < $2::date)
             ORDER BY week_start DESC
-            LIMIT 12
+            LIMIT 6
           `, [alert.message_id, alert.week_start])
         : Promise.resolve([]),
       // Flow history
@@ -101,7 +110,7 @@ export async function POST(req: Request) {
         FROM flow_snapshots
         WHERE flow_id = $1 AND ($2::date IS NULL OR week_start < $2::date)
         ORDER BY week_start DESC
-        LIMIT 12
+        LIMIT 6
       `, [alert.flow_id, alert.week_start]),
     ])
 
