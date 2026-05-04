@@ -166,6 +166,8 @@ export async function runWeeklySync(weekStart?: Date, options: SyncOptions = {})
   // 4. Write everything in a single transaction
   let flowSnaps = 0
   let msgSnaps = 0
+  const knownFlowIds = new Set(flows.map(f => f.flow_id))
+  const skippedMsgFlowIds = new Set<string>()
 
   await withTransaction(async (client) => {
     // Upsert all flows
@@ -199,6 +201,14 @@ export async function runWeeklySync(weekStart?: Date, options: SyncOptions = {})
       // Use flow_id from the report if we can't find it in messageInfoMap
       const flowId = info?.flow_id ?? stats.flow_id
 
+      // Klaviyo's reporting API can return data for flows that no longer
+      // appear in /flows (deleted but historically present). Skip those —
+      // their FK to flows would fail.
+      if (!knownFlowIds.has(flowId)) {
+        skippedMsgFlowIds.add(flowId)
+        continue
+      }
+
       await upsertMessageSnapshot(client, {
         flow_id: flowId,
         message_id: msgId,
@@ -216,6 +226,14 @@ export async function runWeeklySync(weekStart?: Date, options: SyncOptions = {})
       msgSnaps++
     }
   })
+
+  if (skippedMsgFlowIds.size > 0) {
+    console.warn(
+      `[data-sync] Skipped messages for ${skippedMsgFlowIds.size} unknown flow_id(s) ` +
+      `(deleted in Klaviyo but historically present in report): ` +
+      Array.from(skippedMsgFlowIds).join(', ')
+    )
+  }
 
   // 5. Run alert engine against the new snapshots (unless skipped)
   const alertResult = options.skipAlerts
